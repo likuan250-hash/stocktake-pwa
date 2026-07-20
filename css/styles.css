@@ -332,6 +332,8 @@ body {
   cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
 .bulk-add:active { filter: brightness(.94); }
+/* 「加载更多」弱化变体：不吸底、描边弱按钮，置于列表与「添加选中」之间 */
+.bulk-add.more { position: static; background: transparent; color: var(--primary); border: 1px solid var(--border); font-weight: 600; font-size: 14px; padding: 11px; }
 /* 物料档案批量删除：底部固定栏，悬浮在 tabbar 之上 */
 .batch-bar-fixed {
   position: fixed; left: 0; right: 0; bottom: calc(64px + env(safe-area-inset-bottom));

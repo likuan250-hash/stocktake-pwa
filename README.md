@@ -47,7 +47,7 @@
 |------|------|
 | 前端 | 原生 JS 单页应用（SPA），无框架，轻量 |
 | 数据库 | `sql.js`（WebAssembly 版 SQLite）+ `IndexedDB` 持久化 |
-| 离线 | Service Worker 缓存（当前版本 `stocktake-pwa-v31`；数据文件 `kingdee-sheets.js` 走 network-first 确保拿到最新金蝶库） |
+| 离线 | Service Worker 缓存（当前版本 `stocktake-pwa-v32`；数据文件 `kingdee-sheets.js` 走 network-first 确保拿到最新金蝶库） |
 | 安装 | PWA `manifest.webmanifest` + 图标 |
 | 托管 | GitHub Pages |
 | 部署 | GitHub Actions 自动部署（push 即上线，先跑数据层自测再发布） |
@@ -153,4 +153,4 @@
 
 ## 版本
 
-当前版本：**v31**（对应 `sw.js` 中缓存名 `stocktake-pwa-v31`，每次发布递增）。
+当前版本：**v32**（对应 `sw.js` 中缓存名 `stocktake-pwa-v32`，每次发布递增）。

@@ -81,6 +81,13 @@ initSqlJs({ locateFile: f => VENDOR + f }).then(SQL => {
   core.deleteMaterial(core.getMaterialByCode('009').id);
   assert(core.getMaterialByCode('009') !== undefined, 'getMaterialByCode 应能取到已删(回收站)物料');
 
+  // 8) 默认列表按物料编码升序（盘点单「铺开全部物料」依赖此排序展示）
+  core.clearAllMaterials();
+  ['003', '001', '010', '002', '009'].forEach(c => core.upsertMaterial({ code: c, name: 'M' + c }));
+  const codes = core.listMaterials().map(m => m.code);
+  const sorted = [...codes].sort((a, b) => a.localeCompare(b, 'zh', { numeric: true }));
+  assert(JSON.stringify(codes) === JSON.stringify(sorted), 'listMaterials 默认应按编码升序, 实际 ' + codes.join(','));
+
   console.log(`\n自测结果: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }).catch(e => { console.error('SELFTEST ERROR', e); process.exit(2); });

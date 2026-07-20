@@ -9,13 +9,18 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v31';
+  const APP_VERSION = 'v32';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
   // 否则 searchMaterialsToAdd / addSelectedLines / loadLines 等外层函数引用时会 ReferenceError。
   const selectedMatIds = new Set();
   const selectedLineIds = new Set();
+  // 盘点单「添加物料」候选列表滚动加载状态（默认铺开全部物料，边滚边加载）
+  let addAll = [];        // 当前匹配的物料（已排序、已按仓库过滤）
+  let addRendered = 0;    // 已渲染到 DOM 的条数
+  const ADD_PAGE = 150;   // 每批渲染条数
+  let resultsScrollHandler = null; // resultsEl 的 scroll 监听引用，便于重绑时解绑
   // 物料档案「批量删除」选择模式状态（独立于候选列表的 selectedMatIds，避免切视图冲突）
   let archiveSelectMode = false;
   const archiveSelIds = new Set();
@@ -920,45 +925,82 @@
     });
     view.querySelector('#btnSelModeDetail').onclick = () => toggleDetailSelect();
     loadLines(id);
+    searchMaterialsToAdd(sResults, id); // 进入详情页即铺开全部候选物料（默认空搜索展示全部）
   }
 
-  // 盘点单添加物料：候选列表支持多选（复选框 + 全选当前 + 底部「添加选中」）
+  // 盘点单添加物料：候选列表支持多选（复选框 + 全选 + 底部「添加选中」）。
+  // 默认（空搜索）即铺开全部物料（底层 ORDER BY code，编码升序），支持滚动加载（每批 ADD_PAGE 条）。
   function searchMaterialsToAdd(resultsEl, sheetId) {
     const sEl = view.querySelector('#sSearch');
     if (!sEl) return; // 详情页已切走（如返回列表），pending 的防抖不应再渲染
+    // 清理上一次可能残留的滚动监听，避免重复绑定
+    if (resultsScrollHandler) { resultsEl.removeEventListener('scroll', resultsScrollHandler); resultsScrollHandler = null; }
     const term = (sEl.value || '').trim();
     const whEl = view.querySelector('#sWh');
     const wh = whEl ? (whEl.value || '').trim() : '';
-    if (!term && !wh) { resultsEl.classList.add('hidden'); resultsEl.innerHTML = ''; selectedMatIds.clear(); return; }
     const lineByMat = {};
     db().listLines(sheetId).forEach(l => { if (l.material_id != null) lineByMat[l.material_id] = l.id; });
     let rows = db().listMaterials(term, wh);
     // 仓库筛选客户端兜底：只保留该仓库的物料
     if (wh) rows = rows.filter(m => (m.warehouse || '').trim() === wh);
-    if (!rows.length) {
+    addAll = rows;
+    addRendered = 0;
+    if (!addAll.length) {
       resultsEl.innerHTML = `<div class="empty small">${wh ? '该仓库下没有可添加的物料' : '无匹配物料（可去"物料档案"先导入）'}</div>`;
-      resultsEl.classList.remove('hidden'); return;
+      resultsEl.classList.remove('hidden');
+      return;
     }
-    rows = rows.slice(0, 300);
+    // 骨架：全选栏 + 列表容器 + 加载更多（兜底）+ 添加选中
     resultsEl.innerHTML = `
       <div class="bulk-head">
-        <label class="bh-selall"><input type="checkbox" id="selAll"> 全选当前 (${rows.length})</label>
+        <label class="bh-selall"><input type="checkbox" id="selAll"> 全选 (${addAll.length})</label>
         <span class="sel-count" id="selCount">已选 0</span>
-      </div>` + rows.map(m => {
-        const exists = lineByMat[m.id] != null;
-        const checked = selectedMatIds.has(m.id) && !exists;
-        return `
-        <div class="result-item${exists ? ' exists' : ''}" data-id="${m.id}" data-line="${exists ? lineByMat[m.id] : ''}">
-          <input type="checkbox" class="sel" data-id="${m.id}" ${exists ? 'disabled' : ''} ${checked ? 'checked' : ''}>
-          <span class="ri-main">${esc(m.name)} <span class="muted">${esc(m.code)}</span></span>
-          <span class="ri-sub muted">${esc(m.unit || '')} ${esc(m.spec || '')}${m.warehouse ? ' · ' + esc(m.warehouse) : ''}${exists ? ' · <span class="added">已添加</span>' : ''}</span>
-        </div>`;
-      }).join('') + `
+      </div>
+      <div id="matItems"></div>
+      <button id="btnLoadMore" class="bulk-add more" style="display:none">加载更多</button>
       <button id="btnAddSel" class="bulk-add">添加选中 (0)</button>`;
     resultsEl.classList.remove('hidden');
+    const matItems = resultsEl.querySelector('#matItems');
     const selAll = resultsEl.querySelector('#selAll');
     const selCount = resultsEl.querySelector('#selCount');
     const btnAdd = resultsEl.querySelector('#btnAddSel');
+    const btnLoadMore = resultsEl.querySelector('#btnLoadMore');
+
+    function makeItem(m) {
+      const exists = lineByMat[m.id] != null;
+      const checked = selectedMatIds.has(m.id) && !exists;
+      const it = document.createElement('div');
+      it.className = 'result-item' + (exists ? ' exists' : '');
+      it.dataset.id = m.id;
+      it.dataset.line = exists ? lineByMat[m.id] : '';
+      it.innerHTML = `
+        <input type="checkbox" class="sel" data-id="${m.id}" ${exists ? 'disabled' : ''} ${checked ? 'checked' : ''}>
+        <span class="ri-main">${esc(m.name)} <span class="muted">${esc(m.code)}</span></span>
+        <span class="ri-sub muted">${esc(m.unit || '')} ${esc(m.spec || '')}${m.warehouse ? ' · ' + esc(m.warehouse) : ''}${exists ? ' · <span class="added">已添加</span>' : ''}</span>`;
+      it.querySelector('.sel').addEventListener('change', () => {
+        if (it.querySelector('.sel').checked) selectedMatIds.add(m.id); else selectedMatIds.delete(m.id);
+        syncSel();
+      });
+      it.addEventListener('click', (e) => {
+        if (e.target.classList.contains('sel')) return; // 复选框自行处理
+        const lineId = it.dataset.line ? +it.dataset.line : null;
+        if (lineId != null) { locateLine(lineId, sheetId); return; } // 已添加：定位到本单行
+        const cb = it.querySelector('.sel');
+        if (cb && !cb.disabled) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
+      });
+      return it;
+    }
+
+    function appendBatch() {
+      const batch = addAll.slice(addRendered, addRendered + ADD_PAGE);
+      const frag = document.createDocumentFragment();
+      batch.forEach(m => frag.appendChild(makeItem(m)));
+      matItems.appendChild(frag);
+      addRendered += batch.length;
+      if (addRendered >= addAll.length) btnLoadMore.style.display = 'none';
+      else { btnLoadMore.style.display = ''; btnLoadMore.textContent = '加载更多 (' + (addAll.length - addRendered) + ')'; }
+    }
+
     function syncSel() {
       const boxes = resultsEl.querySelectorAll('.sel:not(:disabled)');
       const checkedBoxes = resultsEl.querySelectorAll('.sel:not(:disabled):checked');
@@ -967,33 +1009,28 @@
       selAll.checked = boxes.length > 0 && boxes.length === checkedBoxes.length;
       selAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < boxes.length;
     }
-    resultsEl.querySelectorAll('.sel').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const mid = +cb.dataset.id;
-        if (cb.checked) selectedMatIds.add(mid); else selectedMatIds.delete(mid);
-        syncSel();
-      });
-    });
-    resultsEl.querySelectorAll('.result-item').forEach(it => {
-      it.addEventListener('click', (e) => {
-        if (e.target.classList.contains('sel')) return; // 复选框自行处理
-        const mid = +it.dataset.id;
-        const lineId = it.dataset.line ? +it.dataset.line : null;
-        if (lineId != null) { locateLine(lineId, sheetId); return; } // 已添加：定位到本单行
-        const cb = it.querySelector('.sel');
-        if (cb && !cb.disabled) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
-      });
-    });
+
+    appendBatch();
+    syncSel();
+
     selAll.addEventListener('change', () => {
-      resultsEl.querySelectorAll('.sel:not(:disabled)').forEach(cb => {
-        cb.checked = selAll.checked;
-        const mid = +cb.dataset.id;
-        if (selAll.checked) selectedMatIds.add(mid); else selectedMatIds.delete(mid);
+      // 全选作用于「全部匹配结果」（跨分页），不仅限于已渲染
+      addAll.forEach(m => {
+        if (lineByMat[m.id] != null) return; // 已添加的不参与
+        if (selAll.checked) selectedMatIds.add(m.id); else selectedMatIds.delete(m.id);
       });
+      resultsEl.querySelectorAll('.sel:not(:disabled)').forEach(cb => { cb.checked = selAll.checked; });
       syncSel();
     });
     btnAdd.addEventListener('click', () => addSelectedLines(sheetId, resultsEl));
-    syncSel();
+    btnLoadMore.addEventListener('click', appendBatch);
+
+    // 滚动到底自动加载下一批
+    resultsScrollHandler = () => {
+      if (addRendered >= addAll.length) return;
+      if (resultsEl.scrollTop + resultsEl.clientHeight >= resultsEl.scrollHeight - 60) appendBatch();
+    };
+    resultsEl.addEventListener('scroll', resultsScrollHandler);
   }
 
   // 批量将勾选的候选物料加入盘点单
