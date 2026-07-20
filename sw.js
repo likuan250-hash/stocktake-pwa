@@ -1,8 +1,8 @@
-const CACHE = 'stocktake-pwa-v25';
+const CACHE = 'stocktake-pwa-v26';
 const ASSETS = [
   './', './index.html',
   './css/styles.css',
-  './js/db-core.js', './js/db.js', './js/import.js', './js/export.js', './js/app.js',
+  './js/db-core.js', './js/db.js', './js/import.js', './js/export.js', './js/kingdee-sheets.js', './js/app.js',
   './vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/xlsx.full.min.js',
   './manifest.webmanifest',
   './assets/icon-192.png', './assets/icon-512.png', './assets/apple-touch-icon.png'

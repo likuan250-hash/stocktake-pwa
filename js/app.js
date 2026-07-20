@@ -182,11 +182,12 @@
       <div class="view-fixed">
         <div class="toolbar">
           <input id="mSearch" class="search" placeholder="搜索编码 / 名称 / 规格 / 仓库…">
-          <div class="toolbtns">
-            <button id="btnTpl" class="btn ghost">模板</button>
-            <button id="btnImp" class="btn ghost">导入</button>
-            <button id="btnAdd" class="btn primary">+ 新增</button>
-          </div>
+        <div class="toolbtns">
+          <button id="btnKd" class="btn ghost">金蝶导入</button>
+          <button id="btnTpl" class="btn ghost">模板</button>
+          <button id="btnImp" class="btn ghost">导入</button>
+          <button id="btnAdd" class="btn primary">+ 新增</button>
+        </div>
         </div>
         <div class="toolbar sub">
           <select id="mWh" class="search"><option value="">全部仓库</option></select>
@@ -208,6 +209,7 @@
     fillWarehouseOptions(whSel, '');
     search.addEventListener('input', () => loadMList(search.value.trim(), whSel.value));
     whSel.addEventListener('change', () => loadMList(search.value.trim(), whSel.value));
+    view.querySelector('#btnKd').onclick = openKingdeeImport;
     view.querySelector('#btnTpl').onclick = () => ImportXLSX.downloadTemplate().catch(() => toast('模板生成失败'));
     view.querySelector('#btnImp').onclick = () => fileInput.click();
     view.querySelector('#btnAdd').onclick = () => openMaterialForm(null);
@@ -377,6 +379,84 @@
       if (wh) fillWarehouseOptions(wh, wh.value);
       loadMList(view.querySelector('#mSearch').value.trim(), wh ? wh.value : '');
     };
+  }
+
+  // ============ 从金蝶盘点单导入物料 ============
+  // 静态同步库（window.KINGDEE_SHEETS，由 KingdeeMCP 按单号拉取生成）。
+  // 物料档案页按单号选单 → 预览 → 确认 upsert 进物料主数据（加法功能，不影响现有导入/新增）。
+  function openKingdeeImport() {
+    const sheets = window.KINGDEE_SHEETS || [];
+    if (!sheets.length) { toast('暂无可用的金蝶盘点单'); return; }
+    renderSheetList();
+
+    function renderSheetList() {
+      openModal(`
+        <h3>从金蝶盘点单导入<button class="btn-close" id="kd_close">✕</button></h3>
+        <p class="muted" style="font-size:13px;margin:0 0 12px;line-height:1.6;">选择一个金蝶「物料盘点作业表」，将其中的物料按编码同步进物料档案（新增 / 更新）。</p>
+        <div id="kdList" class="list" style="max-height:58vh;overflow-y:auto;gap:8px;"></div>
+      `);
+      modal.querySelector('#kd_close').onclick = closeModal;
+      const el = modal.querySelector('#kdList');
+      el.innerHTML = sheets.map((s, i) => {
+        const exSet = new Set(db().listMaterials().map(m => m.code));
+        const newCnt = s.materials.filter(m => m.code && !exSet.has(m.code)).length;
+        const updCnt = s.materials.length - newCnt;
+        return `
+        <div class="card row kd-sheet" data-i="${i}">
+          <div class="row-main" data-i="${i}">
+            <div class="row-title">${esc(s.billNo)} <span class="muted">${esc(s.org)}</span></div>
+            <div class="row-sub">${esc(s.date)} · ${s.materials.length} 个物料（新增 ${newCnt} / 更新 ${updCnt}）</div>
+          </div>
+          <div class="row-actions"><button class="btn primary sm" data-i="${i}">选择</button></div>
+        </div>`;
+      }).join('');
+      el.querySelectorAll('.kd-sheet').forEach(c => {
+        const go = () => renderPreview(+c.dataset.i);
+        c.querySelector('.row-main').onclick = go;
+        c.querySelector('.btn').onclick = go;
+      });
+    }
+
+    function renderPreview(i) {
+      const s = sheets[i];
+      openModal(`
+        <h3>${esc(s.billNo)} 物料预览<button class="btn-close" id="kd_back">←</button></h3>
+        <p class="muted" style="font-size:13px;margin:0 0 10px;line-height:1.6;">${esc(s.org)} · ${esc(s.date)} · 共 ${s.materials.length} 个物料。确认后按编码 upsert 进物料档案。</p>
+        <div id="kdPrev" class="list" style="max-height:52vh;overflow-y:auto;gap:8px;"></div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button class="btn ghost" id="kd_back2">返回</button>
+          <button class="btn primary" id="kd_confirm">确认导入 ${s.materials.length} 个</button>
+        </div>
+      `);
+      const prev = modal.querySelector('#kdPrev');
+      prev.innerHTML = s.materials.map(m => {
+        const isNew = m.code && !db().getMaterialByCode(m.code);
+        return `
+        <div class="card row">
+          <div class="row-main">
+            <div class="row-title">${esc(m.name)} <span class="muted">${esc(m.code)}</span> ${isNew ? '<span class="remark-flag">新增</span>' : '<span class="muted">更新</span>'}</div>
+            <div class="row-sub">${esc(m.unit || '')} ${esc(m.spec || '')}${m.warehouse ? ' · ' + esc(m.warehouse) : ''}</div>
+          </div>
+        </div>`;
+      }).join('');
+      modal.querySelector('#kd_back').onclick = renderSheetList;
+      modal.querySelector('#kd_back2').onclick = renderSheetList;
+      modal.querySelector('#kd_confirm').onclick = async () => {
+        if (!(await askConfirm('确认将「' + s.billNo + '」的 ' + s.materials.length + ' 个物料 upsert 进物料档案？'))) return;
+        let added = 0, updated = 0;
+        s.materials.forEach(m => {
+          if (!m.code) return;
+          const ex = db().getMaterialByCode(m.code);
+          db().upsertMaterial(m);
+          if (ex) updated++; else added++;
+        });
+        closeModal();
+        const wh = view.querySelector('#mWh');
+        if (wh) fillWarehouseOptions(wh, wh.value);
+        loadMList(view.querySelector('#mSearch').value.trim(), wh ? wh.value : '');
+        toast(`已导入 ${added + updated} 个（新增 ${added} / 更新 ${updated}）`);
+      };
+    }
   }
 
   // ============ 盘点单 ============
