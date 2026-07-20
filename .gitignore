@@ -1,0 +1,4 @@
+# Python 生成脚本的临时产物
+__pycache__/
+scripts/_data/
+*.pyc

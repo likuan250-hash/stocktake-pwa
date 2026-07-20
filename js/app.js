@@ -485,28 +485,113 @@
       modal.querySelector('#kd_back').onclick = renderSheetList;
       modal.querySelector('#kd_back2').onclick = renderSheetList;
       modal.querySelector('#kd_confirm').onclick = async () => {
-        if (isClear) {
-          if (!(await askConfirm('此操作不可恢复：将先删除全部现有物料（回收站保留不动），再导入「' + s.billNo + '」的 ' + s.materials.length + ' 个物料。确定清空并导入？'))) return;
-          const cleared = db().listMaterials().length;
-          db().clearAllMaterials();
-          let imported = 0;
-          s.materials.forEach(m => { if (!m.code) return; db().upsertMaterial(m); imported++; });
-          closeModal(); refresh();
-          toast(`已清空 ${cleared} 条、导入 ${imported} 个`);
-        } else {
-          if (!(await askConfirm('确认将「' + s.billNo + '」的 ' + s.materials.length + ' 个物料 upsert 进物料档案？'))) return;
-          let added = 0, updated = 0;
-          s.materials.forEach(m => {
-            if (!m.code) return;
-            const ex = db().getMaterialByCode(m.code);
-            db().upsertMaterial(m);
-            if (ex) updated++; else added++;
-          });
-          closeModal(); refresh();
-          toast(`已导入 ${added + updated} 个（新增 ${added} / 更新 ${updated}）`);
-        }
+        await importMaterials(s.materials, importMode, { label: s.billNo, onDone: refresh });
       };
     }
+  }
+
+  // ============ 共享：物料导入（金蝶单 / XLSX 通用） ============
+  // mode: 'merge'(更新添加,默认) | 'clear'(清空后导入)
+  // 统一处理：回收站同编码提示、二次确认、清空模式整库快照+失败回滚兜底。
+  async function importMaterials(items, mode, opts) {
+    opts = opts || {};
+    const onDone = typeof opts.onDone === 'function' ? opts.onDone : function () {};
+    const valid = (items || []).filter(m => m.code);
+    if (!valid.length) { toast('没有可导入的物料（缺少编码）'); return false; }
+
+    // 回收站同编码提示：合并/清空两种模式 upsert 都会把同编码的回收站物料恢复为活跃
+    const trashCodes = new Set(db().listDeletedMaterials().map(m => m.code));
+    const overlap = valid.filter(m => trashCodes.has(m.code)).map(m => m.code);
+    if (overlap.length) {
+      const preview = overlap.slice(0, 12).join('、') + (overlap.length > 12 ? ' 等' : '');
+      const ok = await askConfirm('以下 ' + overlap.length + ' 个编码在回收站中也存在，导入后将恢复为活跃物料：\n' + preview + '\n继续导入？');
+      if (!ok) return false;
+    }
+
+    if (mode === 'clear') {
+      const snapshot = window.AppDB.getBackupString();
+      const cleared = db().listMaterials().length;
+      const ok = await askConfirm('此操作不可恢复：将先删除全部现有物料（回收站保留不动），再导入 ' + valid.length + ' 个物料。确定清空并导入？');
+      if (!ok) return false;
+      try {
+        db().clearAllMaterials();
+        let imported = 0;
+        valid.forEach(m => { db().upsertMaterial(m); imported++; });
+        closeModal();
+        toast('已清空 ' + cleared + ' 条、导入 ' + imported + ' 个');
+        onDone();
+        return true;
+      } catch (e) {
+        console.error('清空导入失败，正在回滚', e);
+        try { await window.AppDB.importBackupString(snapshot); } catch (e2) { console.error('回滚失败', e2); }
+        closeModal();
+        toast('清空导入失败，已回滚到导入前状态');
+        onDone();
+        return false;
+      }
+    }
+
+    // merge 模式
+    const ok = await askConfirm('确认将 ' + valid.length + ' 个物料 upsert 进物料档案（按编码合并：已有则更新，没有则新增）？');
+    if (!ok) return false;
+    let added = 0, updated = 0;
+    try {
+      valid.forEach(m => {
+        const ex = db().getMaterialByCode(m.code);
+        db().upsertMaterial(m);
+        if (ex) updated++; else added++;
+      });
+      closeModal();
+      toast('已导入 ' + (added + updated) + ' 个（新增 ' + added + ' / 更新 ' + updated + '）');
+      onDone();
+      return true;
+    } catch (e) {
+      console.error('导入失败', e);
+      closeModal();
+      toast('导入失败：' + (e && e.message ? e.message : e));
+      onDone();
+      return false;
+    }
+  }
+
+  // 通用「导入方式」选择弹窗（金蝶单与 XLSX 复用）
+  function renderImportModeChoice(opts) {
+    opts = opts || {};
+    const count = opts.count || 0;
+    const onNext = opts.onNext || function () {};
+    let mode = 'merge';
+    openModal(`
+      <h3>导入物料<button class="btn-close" id="im_close">✕</button></h3>
+      <p class="muted" style="font-size:13px;margin:0 0 12px;line-height:1.6;">请选择导入方式（共 ${count} 个有效物料）：</p>
+      <div class="list" style="gap:10px;">
+        <div class="card row kd-mode selected" data-mode="merge">
+          <div class="row-main">
+            <div class="row-title">更新添加（保留现有物料）</div>
+            <div class="row-sub">按编码合并：已有则更新，没有则新增。不影响现有物料。</div>
+          </div>
+        </div>
+        <div class="card row kd-mode danger" data-mode="clear">
+          <div class="row-main">
+            <div class="row-title">清空后导入（先删全部再导入）</div>
+            <div class="row-sub">会先删除全部现有物料（回收站保留不动），再导入所选数据，结果仅含本次数据。</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions" style="margin-top:14px;">
+        <button class="btn ghost" id="im_cancel">取消</button>
+        <button class="btn primary" id="im_next">继续</button>
+      </div>
+    `);
+    modal.querySelector('#im_close').onclick = closeModal;
+    modal.querySelector('#im_cancel').onclick = closeModal;
+    modal.querySelectorAll('.kd-mode').forEach(c => {
+      c.onclick = () => {
+        mode = c.dataset.mode;
+        modal.querySelectorAll('.kd-mode').forEach(x => x.classList.remove('selected'));
+        c.classList.add('selected');
+      };
+    });
+    modal.querySelector('#im_next').onclick = () => onNext(mode);
   }
 
   // ============ 盘点单 ============
@@ -1142,17 +1227,25 @@
   fileInput.addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
+    let parsed;
     try {
       await ensureXLSX();
-      const { items, skipped } = await ImportXLSX.parseFile(f);
-      let n = 0;
-      for (const it of items) { db().upsertMaterial(it); n++; }
-      toast(`导入完成：成功 ${n} 条${skipped ? `，跳过 ${skipped} 条（缺编码或名称）` : ''}`);
-      if (document.querySelector('#mList')) loadMList(view.querySelector('#mSearch').value.trim());
+      parsed = await ImportXLSX.parseFile(f);
     } catch (err) {
       toast('导入失败：' + err.message);
+      fileInput.value = '';
+      return;
     }
+    const { items, skipped } = parsed;
     fileInput.value = '';
+    if (!items.length) { toast('未解析到有效物料（需含编码与名称列）'); return; }
+    renderImportModeChoice({
+      count: items.length,
+      onNext: (mode) => importMaterials(items, mode, {
+        label: 'xlsx',
+        onDone: () => { if (document.querySelector('#mList')) loadMList(view.querySelector('#mSearch').value.trim()); }
+      })
+    });
   });
 
   // ============ 备份文件恢复 ============
@@ -1195,7 +1288,10 @@
             if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner();
           });
         });
-      }).catch(() => {});
+      }).catch(err => {
+        console.error('Service Worker 注册失败（离线缓存将不可用）', err);
+        toast('离线缓存不可用，本次使用需保持联网');
+      });
     }
     try {
       await window.AppDB.init();
