@@ -173,6 +173,12 @@
       emptyTrashSheets() {
         run("DELETE FROM count_lines WHERE sheet_id IN (SELECT id FROM count_sheets WHERE deleted=1)");
         run("DELETE FROM count_sheets WHERE deleted=1"); mut();
+      },
+      // 清空全部活跃物料主数据（用于"清空后导入"模式）：硬删未删物料，并解绑盘点单明细的 material_id 引用；
+      // 已软删(回收站)的物料保留不动。盘点单明细行本身保留（自带 code/name 副本）。
+      clearAllMaterials() {
+        run("UPDATE count_lines SET material_id=NULL WHERE material_id IN (SELECT id FROM materials WHERE deleted=0 OR deleted IS NULL)");
+        run("DELETE FROM materials WHERE deleted=0 OR deleted IS NULL"); mut();
       }
     };
   }

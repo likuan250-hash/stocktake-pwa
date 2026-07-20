@@ -387,19 +387,61 @@
   function openKingdeeImport() {
     const sheets = window.KINGDEE_SHEETS || [];
     if (!sheets.length) { toast('暂无可用的金蝶盘点单'); return; }
-    renderSheetList();
+    let importMode = 'merge'; // 'merge' = 更新添加(默认,安全) | 'clear' = 清空后导入
+    renderModeChoice();
+
+    function refresh() {
+      const wh = view.querySelector('#mWh');
+      if (wh) fillWarehouseOptions(wh, wh.value);
+      loadMList(view.querySelector('#mSearch').value.trim(), wh ? wh.value : '');
+    }
+
+    function renderModeChoice() {
+      openModal(`
+        <h3>从金蝶盘点单导入<button class="btn-close" id="kd_close">✕</button></h3>
+        <p class="muted" style="font-size:13px;margin:0 0 12px;line-height:1.6;">请选择导入方式：</p>
+        <div class="list" style="gap:10px;">
+          <div class="card row kd-mode ${importMode === 'merge' ? 'selected' : ''}" data-mode="merge">
+            <div class="row-main">
+              <div class="row-title">更新添加（保留现有物料）</div>
+              <div class="row-sub">按编码合并：已有则更新，没有则新增。不影响现有物料。</div>
+            </div>
+          </div>
+          <div class="card row kd-mode danger ${importMode === 'clear' ? 'selected' : ''}" data-mode="clear">
+            <div class="row-main">
+              <div class="row-title">清空后导入（先删全部再导入所选单）</div>
+              <div class="row-sub">会先删除全部现有物料（回收站保留不动），再导入所选单，结果仅含该单物料。</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button class="btn ghost" id="kd_cancel">取消</button>
+          <button class="btn primary" id="kd_next">继续</button>
+        </div>
+      `);
+      modal.querySelector('#kd_close').onclick = closeModal;
+      modal.querySelector('#kd_cancel').onclick = closeModal;
+      modal.querySelectorAll('.kd-mode').forEach(c => {
+        c.onclick = () => {
+          importMode = c.dataset.mode;
+          modal.querySelectorAll('.kd-mode').forEach(x => x.classList.remove('selected'));
+          c.classList.add('selected');
+        };
+      });
+      modal.querySelector('#kd_next').onclick = renderSheetList;
+    }
 
     function renderSheetList() {
       openModal(`
         <h3>从金蝶盘点单导入<button class="btn-close" id="kd_close">✕</button></h3>
-        <p class="muted" style="font-size:13px;margin:0 0 12px;line-height:1.6;">选择一个金蝶「物料盘点作业表」，将其中的物料按编码同步进物料档案（新增 / 更新）。</p>
+        <p class="muted" style="font-size:13px;margin:0 0 12px;line-height:1.6;">${importMode === 'clear' ? '清空模式：导入后物料档案将仅含所选单。' : '更新添加模式：按编码合并进现有物料。'}选择一个金蝶「物料盘点作业表」。</p>
         <div id="kdList" class="list" style="max-height:58vh;overflow-y:auto;gap:8px;"></div>
       `);
       modal.querySelector('#kd_close').onclick = closeModal;
       const el = modal.querySelector('#kdList');
+      const activeCodes = new Set(db().listMaterials().map(m => m.code));
       el.innerHTML = sheets.map((s, i) => {
-        const exSet = new Set(db().listMaterials().map(m => m.code));
-        const newCnt = s.materials.filter(m => m.code && !exSet.has(m.code)).length;
+        const newCnt = importMode === 'clear' ? s.materials.length : s.materials.filter(m => m.code && !activeCodes.has(m.code)).length;
         const updCnt = s.materials.length - newCnt;
         return `
         <div class="card row kd-sheet" data-i="${i}">
@@ -419,18 +461,19 @@
 
     function renderPreview(i) {
       const s = sheets[i];
+      const isClear = importMode === 'clear';
       openModal(`
         <h3>${esc(s.billNo)} 物料预览<button class="btn-close" id="kd_back">←</button></h3>
-        <p class="muted" style="font-size:13px;margin:0 0 10px;line-height:1.6;">${esc(s.org)} · ${esc(s.date)} · 共 ${s.materials.length} 个物料。确认后按编码 upsert 进物料档案。</p>
+        <p class="muted" style="font-size:13px;margin:0 0 10px;line-height:1.6;">${esc(s.org)} · ${esc(s.date)} · 共 ${s.materials.length} 个物料。${isClear ? '确认后将<strong>先清空全部现有物料（回收站保留）</strong>，再导入本单。' : '确认后按编码 upsert 进物料档案。'}</p>
         <div id="kdPrev" class="list" style="max-height:52vh;overflow-y:auto;gap:8px;"></div>
         <div class="modal-actions" style="margin-top:12px;">
           <button class="btn ghost" id="kd_back2">返回</button>
-          <button class="btn primary" id="kd_confirm">确认导入 ${s.materials.length} 个</button>
+          <button class="btn ${isClear ? 'danger' : 'primary'}" id="kd_confirm">${isClear ? '清空并导入 ' + s.materials.length + ' 个' : '确认导入 ' + s.materials.length + ' 个'}</button>
         </div>
       `);
       const prev = modal.querySelector('#kdPrev');
       prev.innerHTML = s.materials.map(m => {
-        const isNew = m.code && !db().getMaterialByCode(m.code);
+        const isNew = isClear ? true : (m.code && !db().getMaterialByCode(m.code));
         return `
         <div class="card row">
           <div class="row-main">
@@ -442,19 +485,26 @@
       modal.querySelector('#kd_back').onclick = renderSheetList;
       modal.querySelector('#kd_back2').onclick = renderSheetList;
       modal.querySelector('#kd_confirm').onclick = async () => {
-        if (!(await askConfirm('确认将「' + s.billNo + '」的 ' + s.materials.length + ' 个物料 upsert 进物料档案？'))) return;
-        let added = 0, updated = 0;
-        s.materials.forEach(m => {
-          if (!m.code) return;
-          const ex = db().getMaterialByCode(m.code);
-          db().upsertMaterial(m);
-          if (ex) updated++; else added++;
-        });
-        closeModal();
-        const wh = view.querySelector('#mWh');
-        if (wh) fillWarehouseOptions(wh, wh.value);
-        loadMList(view.querySelector('#mSearch').value.trim(), wh ? wh.value : '');
-        toast(`已导入 ${added + updated} 个（新增 ${added} / 更新 ${updated}）`);
+        if (isClear) {
+          if (!(await askConfirm('此操作不可恢复：将先删除全部现有物料（回收站保留不动），再导入「' + s.billNo + '」的 ' + s.materials.length + ' 个物料。确定清空并导入？'))) return;
+          const cleared = db().listMaterials().length;
+          db().clearAllMaterials();
+          let imported = 0;
+          s.materials.forEach(m => { if (!m.code) return; db().upsertMaterial(m); imported++; });
+          closeModal(); refresh();
+          toast(`已清空 ${cleared} 条、导入 ${imported} 个`);
+        } else {
+          if (!(await askConfirm('确认将「' + s.billNo + '」的 ' + s.materials.length + ' 个物料 upsert 进物料档案？'))) return;
+          let added = 0, updated = 0;
+          s.materials.forEach(m => {
+            if (!m.code) return;
+            const ex = db().getMaterialByCode(m.code);
+            db().upsertMaterial(m);
+            if (ex) updated++; else added++;
+          });
+          closeModal(); refresh();
+          toast(`已导入 ${added + updated} 个（新增 ${added} / 更新 ${updated}）`);
+        }
       };
     }
   }
