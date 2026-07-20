@@ -8,6 +8,9 @@
   const fileInput = document.getElementById('fileInput');
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
+  // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
+  const APP_VERSION = 'v31';
+  const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
   // 否则 searchMaterialsToAdd / addSelectedLines / loadLines 等外层函数引用时会 ReferenceError。
@@ -1276,8 +1279,66 @@
     bar.querySelector('#updateReload').onclick = () => location.reload();
   }
 
+  // ============ 版本查看 + 手动检测更新 ============
+  function openVersionPanel() {
+    openModal(`
+      <h3>版本信息<button class="btn-close" id="vp_close">✕</button></h3>
+      <div class="row" style="margin:6px 0 14px;">
+        <div class="row-main">
+          <div class="row-title">当前版本：${APP_VERSION}</div>
+          <div class="row-sub">离线优先 PWA · 所有数据仅存本机浏览器</div>
+        </div>
+      </div>
+      <p id="vpStatus" class="muted" style="font-size:13px;line-height:1.6;min-height:20px;margin:0 0 14px;">点击下方「检测更新」检查服务器是否有新版本。</p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="vp_close2">关闭</button>
+        <button class="btn primary" id="vp_check">检测更新</button>
+      </div>
+    `);
+    modal.querySelector('#vp_close').onclick = closeModal;
+    modal.querySelector('#vp_close2').onclick = closeModal;
+    modal.querySelector('#vp_check').onclick = checkForUpdate;
+  }
+
+  async function checkForUpdate() {
+    const status = modal.querySelector('#vpStatus');
+    if (!('serviceWorker' in navigator)) {
+      status.textContent = '当前环境不支持离线更新（Service Worker 不可用）。';
+      return;
+    }
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) {
+      status.textContent = '尚未注册 Service Worker，无法检测更新。';
+      return;
+    }
+    const btn = modal.querySelector('#vp_check');
+    btn.disabled = true; btn.textContent = '检测中…';
+    status.textContent = '正在向服务器检查新版本…';
+    const before = navigator.serviceWorker.controller;
+    try { await reg.update(); } catch (e) { /* 忽略网络抖动，下面按 controller 是否变化判断 */ }
+    // 等待新 SW 安装并激活（sw.js 内 skipWaiting 会立即接管），controllerchange 即代表有新版本生效
+    await new Promise(res => {
+      let done = false; const finish = () => { if (!done) { done = true; res(); } };
+      navigator.serviceWorker.addEventListener('controllerchange', finish, { once: true });
+      setTimeout(finish, 4000);
+    });
+    const after = navigator.serviceWorker.controller;
+    const changed = after && after !== before;
+    btn.disabled = false; btn.textContent = '检测更新';
+    if (changed) {
+      status.textContent = '发现新版本！点击下方按钮立即刷新以应用更新。';
+      const acts = modal.querySelector('.modal-actions');
+      acts.innerHTML = '<button class="btn ghost" id="vp_later">稍后</button><button class="btn primary" id="vp_reload">立即刷新</button>';
+      modal.querySelector('#vp_later').onclick = closeModal;
+      modal.querySelector('#vp_reload').onclick = () => location.reload();
+    } else {
+      status.textContent = '已是最新版本（' + APP_VERSION + '）。';
+    }
+  }
+
   async function boot() {
     applyTheme(localStorage.getItem('theme') || 'system');
+    if (verBtn) { verBtn.textContent = APP_VERSION; verBtn.onclick = openVersionPanel; }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
         reg.addEventListener('updatefound', () => {

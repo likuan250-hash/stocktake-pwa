@@ -16,6 +16,7 @@
   - 两种导入方式可选：**更新添加**（按编码合并，默认安全）/ **清空后导入**（先删全部再导入，二次确认 + 失败自动回滚）
 - **离线优先**：首次打开后缓存到本地，无网络也能用
 - **自动保存**：每次操作防抖落盘，关页面也不丢数据
+- **版本与更新**：右上角常驻显示当前版本号，点开可手动「检测更新」并一键刷新到最新（自动更新条未弹出时的可靠入口）
 
 ---
 
@@ -46,7 +47,7 @@
 |------|------|
 | 前端 | 原生 JS 单页应用（SPA），无框架，轻量 |
 | 数据库 | `sql.js`（WebAssembly 版 SQLite）+ `IndexedDB` 持久化 |
-| 离线 | Service Worker 缓存（当前版本 `stocktake-pwa-v30`；数据文件 `kingdee-sheets.js` 走 network-first 确保拿到最新金蝶库） |
+| 离线 | Service Worker 缓存（当前版本 `stocktake-pwa-v31`；数据文件 `kingdee-sheets.js` 走 network-first 确保拿到最新金蝶库） |
 | 安装 | PWA `manifest.webmanifest` + 图标 |
 | 托管 | GitHub Pages |
 | 部署 | GitHub Actions 自动部署（push 即上线，先跑数据层自测再发布） |
@@ -152,4 +153,4 @@
 
 ## 版本
 
-当前版本：**v30**（对应 `sw.js` 中缓存名 `stocktake-pwa-v30`，每次发布递增）。
+当前版本：**v31**（对应 `sw.js` 中缓存名 `stocktake-pwa-v31`，每次发布递增）。
