@@ -9,7 +9,7 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v33';
+  const APP_VERSION = 'v34';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
@@ -661,7 +661,7 @@
         <input type="checkbox" class="line-sel mat-sel" data-id="${s.id}" ${on ? 'checked' : ''}>
         <div class="row-main">
           <div class="row-title">${esc(s.title)}</div>
-          <div class="row-sub">${esc((s.created_at || '').slice(0, 10))} · ${s.line_count} 项</div>
+          <div class="row-sub">${esc((s.created_at || '').slice(0, 16))} · ${s.line_count} 项</div>
         </div>
       </div>`;
       }
@@ -669,7 +669,7 @@
       <div class="card row sheet" data-id="${s.id}">
         <div class="row-main">
           <div class="row-title">${esc(s.title)}</div>
-          <div class="row-sub">${esc((s.created_at || '').slice(0, 10))} · ${s.line_count} 项</div>
+          <div class="row-sub">${esc((s.created_at || '').slice(0, 16))} · ${s.line_count} 项</div>
         </div>
         <div class="row-actions">
           <button class="icon-btn danger" data-act="del">🗑</button>
@@ -732,8 +732,24 @@
     if (selAll) { selAll.checked = all; selAll.indeterminate = !all && some; }
   }
 
+  // 新建盘点单默认标题：今天日期 + 「盘点单」，同日第 N 个自动加中文圈号序号
+  // 例：2026-07-20 盘点单 / 2026-07-20 盘点单② / 2026-07-20 盘点单③
+  function defaultSheetTitle() {
+    const now = new Date();
+    const ymd = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+    const prefix = ymd + ' 盘点单';
+    const n = (db().listSheets() || []).filter(s => (s.title || '').startsWith(prefix)).length;
+    return n === 0 ? prefix : prefix + circled(n + 1);
+  }
+  function circled(n) {
+    const map = ['', '①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+    return map[n] || ('(' + n + ')');
+  }
+
   function openNewSheet() {
-    const def = '月末盘点 ' + new Date().toISOString().slice(0, 7);
+    const def = defaultSheetTitle();
     openModal(`
       <h3>新建盘点单<button class="btn-close" id="ns_close">✕</button></h3>
       <label>名称<input id="s_title" value="${esc(def)}"></label>
@@ -813,7 +829,7 @@
         <div class="card row" data-id="${s.id}">
           <div class="row-main">
             <div class="row-title">${esc(s.title)}</div>
-            <div class="row-sub">${esc((s.created_at || '').slice(0, 10))} · ${s.line_count} 项</div>
+            <div class="row-sub">${esc((s.created_at || '').slice(0, 16))} · ${s.line_count} 项</div>
           </div>
           <div class="row-actions">
             <button class="btn ghost sm" data-act="restore">还原</button>
@@ -846,7 +862,7 @@
           <button id="back" class="icon-btn">←</button>
           <div class="head-info">
             <div class="row-title">${esc(sheet.title)}</div>
-            <div class="row-sub">${esc((sheet.created_at || '').slice(0, 10))}</div>
+            <div class="row-sub">${esc((sheet.created_at || '').slice(0, 16))}</div>
           </div>
         </div>
         <div class="detail-actions">
