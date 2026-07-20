@@ -9,7 +9,7 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v32';
+  const APP_VERSION = 'v33';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
@@ -881,6 +881,7 @@
     fillWarehouseOptions(sWh, '');
     view.querySelector('#back').onclick = goSheets;
     sSearch.addEventListener('input', debounce(() => searchMaterialsToAdd(sResults, id), 180));
+    sSearch.addEventListener('focus', () => searchMaterialsToAdd(sResults, id)); // 点搜索框即铺开全部（空搜索展示全部）
     sWh.addEventListener('change', () => searchMaterialsToAdd(sResults, id));
     const lSearch = view.querySelector('#lSearch');
     lSearch.addEventListener('input', () => filterLines(lSearch.value));
@@ -925,7 +926,6 @@
     });
     view.querySelector('#btnSelModeDetail').onclick = () => toggleDetailSelect();
     loadLines(id);
-    searchMaterialsToAdd(sResults, id); // 进入详情页即铺开全部候选物料（默认空搜索展示全部）
   }
 
   // 盘点单添加物料：候选列表支持多选（复选框 + 全选 + 底部「添加选中」）。

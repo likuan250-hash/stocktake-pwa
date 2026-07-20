@@ -47,7 +47,7 @@
 |------|------|
 | 前端 | 原生 JS 单页应用（SPA），无框架，轻量 |
 | 数据库 | `sql.js`（WebAssembly 版 SQLite）+ `IndexedDB` 持久化 |
-| 离线 | Service Worker 缓存（当前版本 `stocktake-pwa-v32`；数据文件 `kingdee-sheets.js` 走 network-first 确保拿到最新金蝶库） |
+| 离线 | Service Worker 缓存（当前版本 `stocktake-pwa-v33`；数据文件 `kingdee-sheets.js` 走 network-first 确保拿到最新金蝶库） |
 | 安装 | PWA `manifest.webmanifest` + 图标 |
 | 托管 | GitHub Pages |
 | 部署 | GitHub Actions 自动部署（push 即上线，先跑数据层自测再发布） |
@@ -144,7 +144,7 @@
 ## 八、自测
 
 - `tests/selftest.js`（Node + 仓库自带 `vendor/sql-wasm.js` + `js/db-core.js`）覆盖数据层核心逻辑：
-  **合并模式新增/更新、清空模式整库替换、回收站保留、导入幂等、回收站同编码恢复语义**等共 20 项断言。
+  **合并模式新增/更新、清空模式整库替换、回收站保留、导入幂等、回收站同编码恢复语义、默认列表编码升序**等共 21 项断言。
 - 每次推送 `main` 由 GitHub Actions 自动运行；本地亦可直接 `node tests/selftest.js` 复验。
 - 导入编排层（`app.js` 的 `importMaterials`：二次确认、整库快照回滚、回收站同编码提示、模式选择弹窗）
   依赖浏览器 DOM/弹窗，由手动与真机验证覆盖。
@@ -153,4 +153,4 @@
 
 ## 版本
 
-当前版本：**v32**（对应 `sw.js` 中缓存名 `stocktake-pwa-v32`，每次发布递增）。
+当前版本：**v33**（对应 `sw.js` 中缓存名 `stocktake-pwa-v33`，每次发布递增）。
