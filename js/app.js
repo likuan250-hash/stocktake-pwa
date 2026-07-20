@@ -184,6 +184,7 @@
           <input id="mSearch" class="search" placeholder="搜索编码 / 名称 / 规格 / 仓库…">
         <div class="toolbtns">
           <button id="btnKd" class="btn ghost">金蝶导入</button>
+          <button id="btnKdFetch" class="btn ghost">获取最新金蝶</button>
           <button id="btnTpl" class="btn ghost">模板</button>
           <button id="btnImp" class="btn ghost">导入</button>
           <button id="btnAdd" class="btn primary">+ 新增</button>
@@ -210,6 +211,7 @@
     search.addEventListener('input', () => loadMList(search.value.trim(), whSel.value));
     whSel.addEventListener('change', () => loadMList(search.value.trim(), whSel.value));
     view.querySelector('#btnKd').onclick = openKingdeeImport;
+    view.querySelector('#btnKdFetch').onclick = fetchLatestKingdee;
     view.querySelector('#btnTpl').onclick = () => ImportXLSX.downloadTemplate().catch(() => toast('模板生成失败'));
     view.querySelector('#btnImp').onclick = () => fileInput.click();
     view.querySelector('#btnAdd').onclick = () => openMaterialForm(null);
@@ -379,6 +381,65 @@
       if (wh) fillWarehouseOptions(wh, wh.value);
       loadMList(view.querySelector('#mSearch').value.trim(), wh ? wh.value : '');
     };
+  }
+
+  // ============ 获取最新金蝶数据（拉取已部署的静态同步库） ============
+  // 说明：App 是纯静态 PWA，运行时连不了金蝶。此按钮拉取的是「已同步并部署到
+  // GitHub Pages 的静态目录」(kingdee-sheets.js)，不是实时查金蝶。
+  // 配合「开发者/自动化 同步新单并部署」后，点此即可把最新目录拉进 App，无需重装。
+  const KD_LS_KEY = 'kd_sheets_cache_v1';
+
+  // 启动时：若本地缓存过更新的目录，用它覆盖捆绑的版本
+  function applyCachedKingdeeSheets() {
+    try {
+      const raw = localStorage.getItem(KD_LS_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached) && cached.length) window.KINGDEE_SHEETS = cached;
+    } catch (_) {}
+  }
+
+  // 从 kingdee-sheets.js 文本中解析数组（文件含注释 + window.KINGDEE_SHEETS = [ ... ];）
+  function parseKingdeeSheets(txt) {
+    const i = txt.indexOf('[');
+    if (i < 0) return [];
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let k = i; k < txt.length; k++) {
+      const ch = txt[k];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"' || ch === "'") { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === '[') depth++;
+      else if (ch === ']') { depth--; if (depth === 0) { end = k; break; } }
+    }
+    if (end < 0) return [];
+    try { return JSON.parse(txt.slice(i, end + 1)); } catch (_) { return []; }
+  }
+
+  async function fetchLatestKingdee() {
+    const btn = document.getElementById('btnKdFetch');
+    if (btn) { btn.disabled = true; btn.textContent = '获取中…'; }
+    try {
+      const base = location.href.substring(0, location.href.lastIndexOf('/') + 1);
+      const url = base + 'js/kingdee-sheets.js?_=' + Date.now();
+      const res = await fetch(url, { cache: 'no-store', redirect: 'follow' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const arr = parseKingdeeSheets(await res.text());
+      if (!arr.length) throw new Error('目录为空');
+      const old = window.KINGDEE_SHEETS || [];
+      const oldSet = new Set(old.map(s => s.billNo));
+      const newOnes = arr.filter(s => !oldSet.has(s.billNo));
+      window.KINGDEE_SHEETS = arr;
+      try { localStorage.setItem(KD_LS_KEY, JSON.stringify(arr)); } catch (_) {}
+      if (btn) { btn.disabled = false; btn.textContent = '获取最新金蝶'; }
+      if (newOnes.length) toast(`已获取最新金蝶数据：${arr.length} 张单（新增 ${newOnes.length} 张，去「金蝶导入」选单导入）`);
+      else toast(`金蝶数据已是最新（${arr.length} 张单）`);
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = '获取最新金蝶'; }
+      toast('获取失败：' + (e && e.message ? e.message : e) + '（需先由开发者/自动化同步并部署新单）');
+      console.error(e);
+    }
   }
 
   // ============ 从金蝶盘点单导入物料 ============
@@ -1135,6 +1196,7 @@
 
   async function boot() {
     applyTheme(localStorage.getItem('theme') || 'system');
+    applyCachedKingdeeSheets();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
         reg.addEventListener('updatefound', () => {
