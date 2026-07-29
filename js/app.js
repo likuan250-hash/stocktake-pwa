@@ -9,7 +9,7 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v38';
+  const APP_VERSION = 'v39';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
@@ -1054,15 +1054,32 @@
     const ids = [...selectedMatIds];
     if (!ids.length) { toast('请先勾选要添加的物料'); return; }
     let added = 0;
+    const newLineIds = [];
     ids.forEach(mid => {
       const m = db().getMaterial(mid);
-      if (m) { db().addLine(sheetId, m); added++; }
+      if (m) { const lid = db().addLine(sheetId, m); added++; newLineIds.push(lid); }
     });
     selectedMatIds.clear();
     const sInput = view.querySelector('#sSearch'); if (sInput) sInput.value = '';
     const lInput = view.querySelector('#lSearch'); if (lInput) lInput.value = '';
     resultsEl.classList.add('hidden'); resultsEl.innerHTML = '';
-    loadLines(sheetId);
+    // 增量追加新行（不重建已有行的 DOM，保留用户正在编辑的状态）
+    const el = view.querySelector('#lList');
+    const emptyEl = el.querySelector('.empty');
+    if (emptyEl) emptyEl.remove();
+    newLineIds.forEach(lid => {
+      const l = db().getLine(lid);
+      if (!l) return;
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = renderLineCard(l);
+      const card = wrapper.firstElementChild;
+      el.appendChild(card);
+      bindLineEvents(card, sheetId);
+    });
+    // 更新计数
+    const totalLines = db().listLines(sheetId);
+    const lc = view.querySelector('#lCount');
+    if (lc) lc.textContent = '本单已录入 ' + totalLines.length + ' 个物料';
     const lastCard = view.querySelector('#lList .card:last-child');
     if (lastCard) {
       lastCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1109,18 +1126,15 @@
     }
   }
 
-  function loadLines(sheetId) {
-    const lines = db().listLines(sheetId);
-    const el = view.querySelector('#lList');
-    if (!lines.length) { el.innerHTML = '<div class="empty">还没有物料，上方搜索“物料编码/名称”添加</div>'; return; }
-    el.innerHTML = lines.map(l => `
-      <div class="card${detailSelectMode ? ' selectmode' : ''}${selectedLineIds.has(l.id) ? ' selected' : ''}" data-id="${l.id}">
+  // 渲染单行物料卡片的 HTML（供 loadLines 全量渲染 / appendLine 增量追加共用）
+  function renderLineCard(l) {
+    return `<div class="card${detailSelectMode ? ' selectmode' : ''}${selectedLineIds.has(l.id) ? ' selected' : ''}" data-id="${l.id}">
         <input type="checkbox" class="line-sel mat-sel" data-id="${l.id}" ${selectedLineIds.has(l.id) ? 'checked' : ''}>
         <div class="card-body">
         <div class="row">
           <div class="row-main">
             <div class="row-title">${esc(l.name)} <span class="muted">${esc(l.code)}</span>${l.remark ? ' <span class="remark-flag">已备注</span>' : ''}</div>
-            <div class="row-sub">${esc(l.system_unit || l.unit || '')} ${esc(l.spec || '')}${l.warehouse ? ' · ' + esc(l.warehouse) : ''}</div>
+            <div class="row-sub">${esc(l.system_unit || '')} ${esc(l.spec || '')}${l.warehouse ? ' · ' + esc(l.warehouse) : ''}</div>
           </div>
           <div class="row-actions">
             <button class="icon-btn" data-act="remark" title="备注">📝</button>
@@ -1130,9 +1144,9 @@
         <div class="stepper">
           <button class="step-btn" data-act="dec">−</button>
           <input class="qty" type="text" inputmode="text" value="${l.qty}" data-id="${l.id}" placeholder="可输入算式">
-          <span class="unit-wrap${((l.unit || '').trim() && (l.unit || '').trim() !== (l.system_unit || l.unit || '').trim()) ? ' offsys' : ''}">
+          <span class="unit-wrap${((l.unit || '').trim() && (l.system_unit || '') && (l.unit || '').trim() !== (l.system_unit || '').trim()) ? ' offsys' : ''}">
             <input class="unit-big" type="text" inputmode="text" value="${esc(l.unit || '')}" data-id="${l.id}" placeholder="单位" aria-label="实盘单位">
-            ${((l.unit || '').trim() && (l.unit || '').trim() !== (l.system_unit || l.unit || '').trim()) ? '<span class="unit-flag">非系统单位</span>' : ''}
+            ${((l.unit || '').trim() && (l.system_unit || '') && (l.unit || '').trim() !== (l.system_unit || '').trim()) ? '<span class="unit-flag">非系统单位</span>' : ''}
           </span>
           <button class="step-btn" data-act="inc">＋</button>
         </div>
@@ -1146,8 +1160,11 @@
         </div>
         ${l.remark ? `<div class="remark-preview">${esc(l.remark)}</div>` : ''}
       </div>
-      </div>`).join('');
-    el.querySelectorAll('.card').forEach(c => {
+      </div>`;
+  }
+
+  // 为单行卡片绑定事件（与 loadLines 内的绑定逻辑一致，避免重复）
+  function bindLineEvents(c, sheetId) {
       const lid = +c.dataset.id;
       const lineSel = c.querySelector('.line-sel');
       lineSel.addEventListener('change', () => {
@@ -1157,22 +1174,23 @@
       });
       if (detailSelectMode) {
         c.addEventListener('click', (e) => {
-          if (e.target.closest('.line-sel')) return; // 点复选框本身由 change 处理，避免双触发
+          if (e.target.closest('.line-sel')) return;
           lineSel.checked = !lineSel.checked;
           if (lineSel.checked) selectedLineIds.add(lid); else selectedLineIds.delete(lid);
           c.classList.toggle('selected', lineSel.checked);
           updateLineBulk();
         });
       }
+      const l = db().getLine(lid);
       c.querySelector('[data-act=dec]').onclick = () => {
         const cur = db().getLine(lid).qty;
         if (cur <= 0) { toast('盘点数量已是最小 0'); return; }
         db().incLine(lid, -1);
-        qty.value = db().getLine(lid).qty; // 原地更新，不重渲染整单
+        c.querySelector('.qty').value = db().getLine(lid).qty;
       };
       c.querySelector('[data-act=inc]').onclick = () => {
         db().incLine(lid, 1);
-        qty.value = db().getLine(lid).qty; // 原地更新，不重渲染整单
+        c.querySelector('.qty').value = db().getLine(lid).qty;
       };
       c.querySelector('[data-act=rm]').onclick = async () => { if (!(await askConfirm('移除该物料行？'))) return; db().removeLine(lid); selectedLineIds.delete(lid); loadLines(sheetId); };
       c.querySelector('[data-act=remark]').onclick = () => openRemarkModal(lid, db().getLine(lid).remark || '', sheetId);
@@ -1187,13 +1205,12 @@
         db().updateLineQty(lid, v);
         qty.value = v;
       });
-      // 实盘单位（放大显示、可修改）：就地写回 unit，不重渲染整单
       const unitBig = c.querySelector('.unit-big');
       const unitWrap = c.querySelector('.unit-wrap');
       function syncUnitOffsys() {
         const nv = (unitBig.value || '').trim();
-        const sys = (l.system_unit || l.unit || '').trim();
-        const off = nv && nv !== sys;
+        const sys = (l.system_unit || '').trim();
+        const off = nv && sys && nv !== sys;
         unitWrap.classList.toggle('offsys', !!off);
         let flag = unitWrap.querySelector('.unit-flag');
         if (off && !flag) {
@@ -1211,7 +1228,6 @@
         const nv = unitBig.value.trim();
         if (nv !== (l.unit || '')) { db().updateLineUnit(lid, nv); l.unit = nv; syncUnitOffsys(); }
       });
-      // 运算符小按钮（聚焦时浮出）；pointerdown 阻止失焦，保证连续输入
       c.querySelectorAll('.ops button').forEach(b => {
         b.addEventListener('pointerdown', e => {
           e.preventDefault();
@@ -1224,7 +1240,14 @@
           try { qty.setSelectionRange(len, len); } catch (_) {}
         });
       });
-    });
+    }
+
+  function loadLines(sheetId) {
+    const lines = db().listLines(sheetId);
+    const el = view.querySelector('#lList');
+    if (!lines.length) { el.innerHTML = '<div class="empty">还没有物料，上方搜索"物料编码/名称"添加</div>'; return; }
+    el.innerHTML = lines.map(l => renderLineCard(l)).join('');
+    el.querySelectorAll('.card').forEach(c => bindLineEvents(c, sheetId));
     const lf = view.querySelector('#lSearch');
     if (lf) filterLines(lf.value);
     const lc = view.querySelector('#lCount');

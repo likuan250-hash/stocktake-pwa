@@ -82,7 +82,7 @@
           mig('count_lines', 'remark', "ALTER TABLE count_lines ADD COLUMN remark TEXT DEFAULT ''");
           mig('count_lines', 'system_unit', "ALTER TABLE count_lines ADD COLUMN system_unit TEXT DEFAULT ''");
           // 归一化：旧行 system_unit 为空时，用 unit（当时的系统单位）回填，保证参考列有值
-          try { db.run("UPDATE count_lines SET system_unit = unit WHERE system_unit IS NULL OR system_unit = ''"); } catch (_) {}
+          try { db.run("UPDATE count_lines SET system_unit = unit WHERE (system_unit IS NULL OR system_unit = '') AND unit IS NOT NULL AND unit <> ''"); } catch (_) {}
           // 一次性归一化：清理物料仓库字段可能残留的前后空格，保证精确筛选匹配
           try { db.run("UPDATE materials SET warehouse = TRIM(warehouse) WHERE warehouse IS NOT NULL AND TRIM(warehouse) <> warehouse"); } catch (_) {}
         } catch (e) { console.error('migrate failed', e); }
