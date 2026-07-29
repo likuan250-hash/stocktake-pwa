@@ -1422,14 +1422,23 @@
     if (verBtn) { verBtn.textContent = APP_VERSION; verBtn.onclick = openVersionPanel; }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
+        // 新 SW 安装完成即提示刷新（不再要求已有 controller，避免首装/controller 清空时漏弹）
         reg.addEventListener('updatefound', () => {
           const nw = reg.installing;
           if (!nw) return;
           nw.addEventListener('statechange', () => {
-            // 仅在「已存在旧版本（有 controller）且新版本已安装」时提示，避免首装误弹
-            if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner();
+            if (nw.state === 'installed') showUpdateBanner();
           });
         });
+        // 新 SW 接管控制权后，立即重载页面以加载最新代码；重载前先落盘，避免丢失未防抖的编辑
+        let reloaded = false;
+        const onCtrl = () => {
+          if (reloaded) return;
+          reloaded = true;
+          try { if (window.AppDB && window.AppDB.flush) window.AppDB.flush(); } catch (_) {}
+          location.reload();
+        };
+        navigator.serviceWorker.addEventListener('controllerchange', onCtrl);
       }).catch(err => {
         console.error('Service Worker 注册失败（离线缓存将不可用）', err);
         toast('离线缓存不可用，本次使用需保持联网');
