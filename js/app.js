@@ -9,7 +9,7 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v39';
+  const APP_VERSION = 'v40';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
@@ -1051,6 +1051,8 @@
 
   // 批量将勾选的候选物料加入盘点单
   function addSelectedLines(sheetId, resultsEl) {
+    // 防御：先强制提交所有未失焦的输入框（单位/数量），避免编辑状态因后续 DOM 操作丢失
+    view.querySelectorAll('#lList .unit-big:focus, #lList .qty:focus').forEach(inp => inp.blur());
     const ids = [...selectedMatIds];
     if (!ids.length) { toast('请先勾选要添加的物料'); return; }
     let added = 0;
