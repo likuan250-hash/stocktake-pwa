@@ -1,4 +1,4 @@
-const CACHE = 'stocktake-pwa-v37';
+const CACHE = 'stocktake-pwa-v38';
 const ASSETS = [
   './', './index.html',
   './css/styles.css',

@@ -9,7 +9,7 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v35';
+  const APP_VERSION = 'v38';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
@@ -1422,7 +1422,7 @@
     if (verBtn) { verBtn.textContent = APP_VERSION; verBtn.onclick = openVersionPanel; }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
-        // 新 SW 安装完成即提示刷新（不再要求已有 controller，避免首装/controller 清空时漏弹）
+        // 新 SW 安装完成即提示刷新（去掉 controller 非空限制，避免首装/controller 清空时漏弹）
         reg.addEventListener('updatefound', () => {
           const nw = reg.installing;
           if (!nw) return;
@@ -1430,15 +1430,6 @@
             if (nw.state === 'installed') showUpdateBanner();
           });
         });
-        // 新 SW 接管控制权后，立即重载页面以加载最新代码；重载前先落盘，避免丢失未防抖的编辑
-        let reloaded = false;
-        const onCtrl = () => {
-          if (reloaded) return;
-          reloaded = true;
-          try { if (window.AppDB && window.AppDB.flush) window.AppDB.flush(); } catch (_) {}
-          location.reload();
-        };
-        navigator.serviceWorker.addEventListener('controllerchange', onCtrl);
       }).catch(err => {
         console.error('Service Worker 注册失败（离线缓存将不可用）', err);
         toast('离线缓存不可用，本次使用需保持联网');
