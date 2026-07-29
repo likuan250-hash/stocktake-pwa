@@ -30,23 +30,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO_ROOT, "js", "kingdee-sheets.js")
 DATA_DIR = os.environ.get("KD_DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "_data"))
 
-# 中央厨房 4 张盘点单（全部已授权纳入同步库）
+# 中央厨房 盘点单（按用户 2026-07 要求「只保留 PDZY016377，其余全部删除」）
 # fid / 日期来自 KingdeeMCP 查询 STK_StockCountInput（FStockOrgId.FName='中央厨房'）
+# PDZY016377 = 「7月份中央厨房盘点」，创建人 李宽，日期 2026-07-29，FID 116428
 CENTRAL = [
-    {"billNo": "PDZY016370", "org": "中央厨房", "date": "2026-06-30", "fid": "116421",
-     "file": "pdzy016370_entries.json"},
-    {"billNo": "PDZY016366", "org": "中央厨房", "date": "2026-05-31", "fid": "116417",
-     "file": "pdzy016366_entries.json"},
-    {"billNo": "PDZY016365", "org": "中央厨房", "date": "2026-04-28", "fid": "116416",
-     "file": "pdzy016365_entries.json"},
-    {"billNo": "PDZY016362", "org": "中央厨房", "date": "2026-04-20", "fid": "116413",
-     "file": "pdzy016362_entries.json"},
+    {"billNo": "PDZY016377", "org": "中央厨房", "date": "2026-07-29", "fid": "116428",
+     "file": "pdzy016377_entries.json"},
 ]
 
-# 测试89 PDZY016356（来自 kingdee_view_bill 实测，单条）
-TEST89_RAW = [
-    {"code": "0010012", "name": "海天柱候酱", "spec": "6.5kg*2桶/件", "unit": "桶", "warehouse": "干货库"},
-]
+# 测试89 单已按用户要求移除（只保留 PDZY016377）
+TEST89_RAW = []
 
 
 def clean(v):
@@ -102,13 +95,15 @@ def main():
     total = 0
     log_lines = []
 
-    tz_mats, tz_dup = dedupe([to_mat(r) for r in TEST89_RAW])
-    sheets.append({
-        "billNo": "PDZY016356", "org": "测试89", "date": "2026-04-03", "fid": "116407",
-        "materials": tz_mats,
-    })
-    total += len(tz_mats)
-    log_lines.append("   测试89 PDZY016356: %d 条 (去重跳过 %d)" % (len(tz_mats), tz_dup))
+    # 测试89 单（仅当 TEST89_RAW 非空时纳入；当前按用户要求已清空）
+    if TEST89_RAW:
+        tz_mats, tz_dup = dedupe([to_mat(r) for r in TEST89_RAW])
+        sheets.append({
+            "billNo": "PDZY016356", "org": "测试89", "date": "2026-04-03", "fid": "116407",
+            "materials": tz_mats,
+        })
+        total += len(tz_mats)
+        log_lines.append("   测试89 PDZY016356: %d 条 (去重跳过 %d)" % (len(tz_mats), tz_dup))
 
     for cfg in CENTRAL:
         path = os.path.join(DATA_DIR, cfg["file"])
@@ -129,7 +124,8 @@ def main():
     header = (
         "// 金蝶盘点单静态同步库（由 Senior Developer 通过 KingdeeMCP 按单号拉取生成）\n"
         "// 生成日期: %s | 来源表单: STK_StockCountInput\n" % gen +
-        "// 授权组织: 测试89 + 中央厨房(全部单号已永久授权纳入同步库)\n"
+        "// 授权组织: 中央厨房（按用户 2026-07 要求「只保留 PDZY016377，其余全部删除」）\n"
+        "// 当前唯一同步单: PDZY016377「7月份中央厨房盘点」(创建人 李宽 / FID 116428 / 2026-07-29)\n"
         "// 数据用途: 物料档案页「从金蝶盘点单导入」按单号选单 → upsert 进物料主数据\n"
         "// 仅含主数据字段(code/name/spec/unit/warehouse)，不含盘点数量(属盘点单流程)\n"
         "// 重新生成: 改 CENTRAL/TEST89_RAW 后运行 python scripts/gen_kingdee_sheets.py\n"
