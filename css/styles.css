@@ -158,6 +158,16 @@ body {
 }
 .unit-big:focus { outline: none; border-color: var(--primary); background: var(--surface-2); }
 .unit-big::placeholder { color: var(--muted); font-size: 13px; font-weight: 500; }
+/* 实盘单位 ≠ 系统单位：橙色高亮 + 角标提醒 */
+.unit-wrap { display: inline-flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; }
+.unit-wrap.offsys .unit-big {
+  color: var(--warn, #d97706); border-color: var(--warn, #d97706); background: var(--warn-weak, #fff7ed);
+}
+.unit-flag {
+  flex: 0 0 auto; font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap;
+  color: var(--warn, #d97706); background: var(--warn-weak, #fff7ed); border: 1px solid var(--warn, #d97706);
+  padding: 3px 5px; border-radius: 6px;
+}
 
 /* 数量框算式：聚焦时浮出运算符小按钮 */
 .ops { display: none; gap: 6px; margin-top: 8px; }

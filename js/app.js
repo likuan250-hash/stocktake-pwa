@@ -1130,7 +1130,10 @@
         <div class="stepper">
           <button class="step-btn" data-act="dec">−</button>
           <input class="qty" type="text" inputmode="text" value="${l.qty}" data-id="${l.id}" placeholder="可输入算式">
-          <input class="unit-big" type="text" inputmode="text" value="${esc(l.unit || '')}" data-id="${l.id}" placeholder="单位" aria-label="实盘单位">
+          <span class="unit-wrap${((l.unit || '').trim() && (l.unit || '').trim() !== (l.system_unit || l.unit || '').trim()) ? ' offsys' : ''}">
+            <input class="unit-big" type="text" inputmode="text" value="${esc(l.unit || '')}" data-id="${l.id}" placeholder="单位" aria-label="实盘单位">
+            ${((l.unit || '').trim() && (l.unit || '').trim() !== (l.system_unit || l.unit || '').trim()) ? '<span class="unit-flag">非系统单位</span>' : ''}
+          </span>
           <button class="step-btn" data-act="inc">＋</button>
         </div>
         <div class="ops" data-id="${l.id}">
@@ -1186,11 +1189,27 @@
       });
       // 实盘单位（放大显示、可修改）：就地写回 unit，不重渲染整单
       const unitBig = c.querySelector('.unit-big');
+      const unitWrap = c.querySelector('.unit-wrap');
+      function syncUnitOffsys() {
+        const nv = (unitBig.value || '').trim();
+        const sys = (l.system_unit || l.unit || '').trim();
+        const off = nv && nv !== sys;
+        unitWrap.classList.toggle('offsys', !!off);
+        let flag = unitWrap.querySelector('.unit-flag');
+        if (off && !flag) {
+          flag = document.createElement('span');
+          flag.className = 'unit-flag';
+          flag.textContent = '非系统单位';
+          unitWrap.appendChild(flag);
+        } else if (!off && flag) {
+          flag.remove();
+        }
+      }
       unitBig.addEventListener('focus', () => c.classList.add('editing'));
       unitBig.addEventListener('blur', () => {
         c.classList.remove('editing');
         const nv = unitBig.value.trim();
-        if (nv !== (l.unit || '')) db().updateLineUnit(lid, nv);
+        if (nv !== (l.unit || '')) { db().updateLineUnit(lid, nv); l.unit = nv; syncUnitOffsys(); }
       });
       // 运算符小按钮（聚焦时浮出）；pointerdown 阻止失焦，保证连续输入
       c.querySelectorAll('.ops button').forEach(b => {
