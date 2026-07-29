@@ -150,6 +150,14 @@ body {
 }
 .qty:focus { outline: none; border-color: var(--primary); }
 .qty::placeholder { color: var(--muted); font-size: 12px; }
+/* 数量后放大的实盘单位：行内可编辑文本，字号放大、宽度自适应 */
+.unit-big {
+  flex: 1 1 auto; min-width: 40px; max-width: 96px; text-align: center; padding: 7px 6px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--primary);
+  font-size: 18px; font-weight: 700; letter-spacing: .5px;
+}
+.unit-big:focus { outline: none; border-color: var(--primary); background: var(--surface-2); }
+.unit-big::placeholder { color: var(--muted); font-size: 13px; font-weight: 500; }
 
 /* 数量框算式：聚焦时浮出运算符小按钮 */
 .ops { display: none; gap: 6px; margin-top: 8px; }

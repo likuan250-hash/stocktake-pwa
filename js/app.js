@@ -1120,7 +1120,7 @@
         <div class="row">
           <div class="row-main">
             <div class="row-title">${esc(l.name)} <span class="muted">${esc(l.code)}</span>${l.remark ? ' <span class="remark-flag">已备注</span>' : ''}</div>
-            <div class="row-sub">${esc(l.unit || '')} ${esc(l.spec || '')}${l.warehouse ? ' · ' + esc(l.warehouse) : ''}</div>
+            <div class="row-sub">${esc(l.system_unit || l.unit || '')} ${esc(l.spec || '')}${l.warehouse ? ' · ' + esc(l.warehouse) : ''}</div>
           </div>
           <div class="row-actions">
             <button class="icon-btn" data-act="remark" title="备注">📝</button>
@@ -1130,6 +1130,7 @@
         <div class="stepper">
           <button class="step-btn" data-act="dec">−</button>
           <input class="qty" type="text" inputmode="text" value="${l.qty}" data-id="${l.id}" placeholder="可输入算式">
+          <input class="unit-big" type="text" inputmode="text" value="${esc(l.unit || '')}" data-id="${l.id}" placeholder="单位" aria-label="实盘单位">
           <button class="step-btn" data-act="inc">＋</button>
         </div>
         <div class="ops" data-id="${l.id}">
@@ -1182,6 +1183,14 @@
         if (v < 0) { toast('盘点数量不能为负数，已设为 0'); db().updateLineQty(lid, 0); qty.value = 0; return; }
         db().updateLineQty(lid, v);
         qty.value = v;
+      });
+      // 实盘单位（放大显示、可修改）：就地写回 unit，不重渲染整单
+      const unitBig = c.querySelector('.unit-big');
+      unitBig.addEventListener('focus', () => c.classList.add('editing'));
+      unitBig.addEventListener('blur', () => {
+        c.classList.remove('editing');
+        const nv = unitBig.value.trim();
+        if (nv !== (l.unit || '')) db().updateLineUnit(lid, nv);
       });
       // 运算符小按钮（聚焦时浮出）；pointerdown 阻止失焦，保证连续输入
       c.querySelectorAll('.ops button').forEach(b => {
