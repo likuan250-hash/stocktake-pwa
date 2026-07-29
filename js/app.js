@@ -9,7 +9,7 @@
   const backupInput = document.getElementById('backupInput');
   const db = () => window.AppDB.api;
   // 当前应用版本（发布时与 sw.js 的 CACHE 名 stocktake-pwa-<ver> 保持同步递增）
-  const APP_VERSION = 'v34';
+  const APP_VERSION = 'v35';
   const verBtn = document.getElementById('verBtn');
   let currentSheetId = null;
   // 跨函数共享的「已勾选」状态：候选物料与明细行。必须位于 II FE 顶层作用域，
